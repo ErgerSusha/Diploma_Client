@@ -8,114 +8,114 @@
     <transition-group name="list-complete" tag="div">
       <div v-for="user in users" :key="user" class="users-button" @click="callUser(user)">{{ user }}</div>
     </transition-group>
-    <router-view />
   </div>
 </template>
 
-<script>
+<script lang="ts">
+import Vue from "vue";
+import Component from "vue-class-component";
 import io from "socket.io-client";
-export default {
-  data: function() {
-    return {
-      users: [],
-      isAdmin: false,
-      rtcConnection: new RTCPeerConnection({
-        iceServers: [
-          { urls: "stun:stun3.l.google.com:19302" },
-          { urls: "stun:stun1.l.google.com:19302" }
-        ]
-      }),
-      localStream: null,
-      remoteStream: null,
-      socket: null
-    };
-  },
+
+@Component
+export default class App extends Vue {
+
+  users: string[] = [];
+  isAdmin = false;
+  rtcConnection = new RTCPeerConnection({
+    iceServers: [
+      { urls: "stun:stun3.l.google.com:19302" },
+      { urls: "stun:stun1.l.google.com:19302" }
+    ]
+  });
+  socket!: SocketIOClient.Socket;
+
   created() {
     const rand = Math.random();
     if (rand > 0.5) {
-      this.socket = io.connect("http://localhost:3000");
+      this.socket = io.connect("https://diploma-api.herokuapp.com");
     } else {
-      this.socket = io.connect("http://localhost:3000", {
+      this.socket = io.connect("https://diploma-api.herokuapp.com", {
         query: `adminToken=op9eeftt345d34d`
       });
       this.isAdmin = true;
     }
 
-    this.socket.on("init_users", users => (this.users = users));
-    this.socket.on("user_connected", userId => this.users.push(userId));
-    this.socket.on("user_disconnected", userId =>
+    this.socket.on("init_users", (users: string[]) => (this.users = users));
+    this.socket.on("user_connected", (userId: string) => this.users.push(userId));
+    this.socket.on("user_disconnected", (userId: string) =>
       this.users.splice(this.users.indexOf(userId), 1)
     );
 
-    this.socket.on("offer", data => this.handleOffer(JSON.parse(data)));
-    this.socket.on("answer", data =>
-      this.rtcConnection.setRemoteDescription(new RTCSessionDescription(JSON.parse(data).answer))
+    this.socket.on("offer", (data: string) => this.handleOffer(JSON.parse(data)));
+    this.socket.on("answer", (data: string) =>
+      this.rtcConnection.setRemoteDescription(
+        new RTCSessionDescription(JSON.parse(data).answer)
+      )
     );
-    this.socket.on("candidate", data => {
+    this.socket.on("candidate", (data: string) => {
       if (this.rtcConnection.remoteDescription) {
         this.rtcConnection.addIceCandidate(
           new RTCIceCandidate(JSON.parse(data).candidate)
         );
       }
     });
-  },
-  methods: {
-    sendRtcEvent(data) {
-      this.socket.emit("rtcevent", JSON.stringify(data));
-    },
-    async callUser(userId) {
-      await this.getMedia(userId);
-      const offer = await this.rtcConnection.createOffer();
-      await this.rtcConnection.setLocalDescription(offer);
+  }
+  sendRtcEvent(data: any) {
+    this.socket.emit("rtcevent", JSON.stringify(data));
+  }
+  async callUser(userId: string) {
+    await this.getMedia(userId);
+    const offer = await this.rtcConnection.createOffer();
+    await this.rtcConnection.setLocalDescription(offer);
+    this.sendRtcEvent({
+      type: "offer",
+      offer,
+      calleeId: userId
+    });
+  }
+  async handleOffer(data: any) {
+    const accepted = confirm(data.callerId + " is calling. Answer?");
+    if (accepted) {
+      await this.getMedia(data.callerId);
+      await this.rtcConnection.setRemoteDescription(
+        new RTCSessionDescription(data.offer)
+      );
+
+      const answer = await this.rtcConnection.createAnswer();
+      await this.rtcConnection.setLocalDescription(answer);
       this.sendRtcEvent({
-        type: "offer",
-        offer,
-        calleeId: userId
+        type: "answer",
+        answer,
+        calleeId: data.callerId
       });
-    },
-    async handleOffer(data) {
-      const accepted = confirm(data.callerId + " is calling. Answer?");
-      if (accepted) {
-        await this.getMedia(data.callerId)
-        await this.rtcConnection.setRemoteDescription(
-          new RTCSessionDescription(data.offer)
-        );
-
-        const answer = await this.rtcConnection.createAnswer();
-        await this.rtcConnection.setLocalDescription(answer);
-        this.sendRtcEvent({
-          type: "answer",
-          answer,
-          calleeId: data.callerId
-        });
-      }
-    },
-    async getMedia(calleeId) {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: true,
-        audio: true
-      });
-
-      document.getElementById("local-stream").srcObject = stream;
-
-      stream
-        .getTracks()
-        .forEach(track => this.rtcConnection.addTrack(track, stream));
-
-      this.rtcConnection.ontrack = ev => document.getElementById("remote-stream").srcObject = ev.streams[0];
-
-      this.rtcConnection.onicecandidate = event => {
-        if (event.candidate) {
-          this.sendRtcEvent({
-            type: "candidate",
-            candidate: event.candidate,
-            calleeId
-          });
-        }
-      };
     }
   }
-};
+  async getMedia(calleeId: string) {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: true,
+      audio: true
+    });
+
+    (<HTMLVideoElement>document.getElementById("local-stream")!).srcObject = stream;
+
+    stream
+      .getTracks()
+      .forEach(track => this.rtcConnection.addTrack(track, stream));
+
+    this.rtcConnection.ontrack = ev =>
+      (<HTMLVideoElement>document.getElementById("remote-stream")!).srcObject = ev.streams[0];
+
+    this.rtcConnection.onicecandidate = event => {
+      if (event.candidate) {
+        this.sendRtcEvent({
+          type: "candidate",
+          candidate: event.candidate,
+          calleeId
+        });
+      }
+    };
+  }
+}
 </script>
 
 <style>
