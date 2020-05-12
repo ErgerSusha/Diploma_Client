@@ -60,20 +60,29 @@ export default class App extends Vue {
       }
     });
   }
-  sendRtcEvent(data: any) {
+
+  sendRtcEvent(data: {
+    type: string;
+    calleeId: string;
+    candidate?: RTCIceCandidate;
+    offer?: RTCSessionDescriptionInit;
+    answer?: RTCSessionDescriptionInit;
+  }) {
     this.socket.emit("rtcevent", JSON.stringify(data));
   }
+
   async callUser(userId: string) {
     await this.getMedia(userId);
     const offer = await this.rtcConnection.createOffer();
     await this.rtcConnection.setLocalDescription(offer);
     this.sendRtcEvent({
       type: "offer",
-      offer,
-      calleeId: userId
+      calleeId: userId,
+      offer
     });
   }
-  async handleOffer(data: any) {
+
+  async handleOffer(data: { callerId: string; offer: RTCSessionDescriptionInit }) {
     const accepted = confirm(data.callerId + " is calling. Answer?");
     if (accepted) {
       await this.getMedia(data.callerId);
@@ -85,33 +94,34 @@ export default class App extends Vue {
       await this.rtcConnection.setLocalDescription(answer);
       this.sendRtcEvent({
         type: "answer",
-        answer,
-        calleeId: data.callerId
+        calleeId: data.callerId,
+        answer
       });
     }
   }
+
   async getMedia(calleeId: string) {
     const stream = await navigator.mediaDevices.getUserMedia({
       video: true,
       audio: true
     });
 
-    (<HTMLVideoElement>document.getElementById("local-stream")!).srcObject = stream;
+    (document.getElementById("local-stream") as HTMLVideoElement).srcObject = stream;
 
     stream
       .getTracks()
       .forEach(track => this.rtcConnection.addTrack(track, stream));
 
     this.rtcConnection.ontrack = ev =>
-      (<HTMLVideoElement>document.getElementById("remote-stream")!).srcObject = ev.streams[0];
+      (document.getElementById("remote-stream") as HTMLVideoElement).srcObject = ev.streams[0];
 
     this.rtcConnection.onicecandidate = event => {
       if (event.candidate) {
         this.sendRtcEvent({
           type: "candidate",
-          candidate: event.candidate,
-          calleeId
-        });
+          calleeId,
+          candidate: event.candidate
+        })
       }
     };
   }
