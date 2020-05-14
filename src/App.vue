@@ -1,23 +1,44 @@
 <template>
   <div id="app">
-    <div v-if="callIsOn">
-      <video ref="localStream" loop autoplay playsinline></video>
-      <img id="hang-up-button" @click="hangUp()"
-        src="https://lh3.googleusercontent.com/AJdc5MZScZb4Yk6tx_6gjfLReztRaHFujar2CUcnsyf24RAwUW9yLbsAb7h2ZLrpLQ">
-      <video ref="remoteStream" loop autoplay playsinline></video>
+    <iframe
+      src="https://tribe-webapp-dev.herokuapp.com"
+      frameborder="0"
+      :class="{'hidden': videoModeOn}"
+    ></iframe>
+
+    <img
+      id="video-toggle-fab"
+      @click="videoModeOn = !videoModeOn"
+      :src="videoModeOn ? '/assets/close.svg' : '/assets/call.svg'"
+    />
+
+    <div id="rtc-app" :class="{'hidden': !videoModeOn}">
+      <h4>
+        {{isAdmin ? ' Admin' : 'Client'}}
+        <i>{{generateNickname(socket.id)}}</i>
+      </h4>
+      <h5 v-if="users.length">Available {{isAdmin ? ' clients' : ' admins'}}</h5>
+      <h5 v-else>Empty, please wait... ⌛</h5>
+      <transition-group name="list-complete" tag="div">
+        <div
+          v-for="user in users"
+          :key="user.id"
+          :class="{'is-calling': user.isCalling }"
+          class="users-button"
+          @click="callUser(user.id)"
+        >{{ generateNickname(user.id) }}</div>
+      </transition-group>
+
+      <video id="local-video" ref="localStream" loop autoplay playsinline></video>
+      <img
+        id="hang-up-button"
+        @click="hangUp()"
+        v-if="callIsOn"
+        src="/assets/call.svg"
+        title="End call"
+      />
+      <video id="remote-video" ref="remoteStream" loop autoplay playsinline></video>
     </div>
-    <h4>{{isAdmin ? ' Admin' : 'Client'}} <i>{{generateNickname(socket.id)}}</i></h4>
-    <h5 v-if="users.length">Available {{isAdmin ? ' clients' : ' admins'}}</h5>
-    <h5 v-else>Empty, please wait... ⌛</h5>
-    <transition-group name="list-complete" tag="div">
-      <div v-for="user in users"
-        :key="user.id"
-        :class="{'is-calling': user.isCalling }"
-        class="users-button"
-        @click="callUser(user.id)">
-        {{ generateNickname(user.id) }}
-      </div>
-    </transition-group>
   </div>
 </template>
 
@@ -39,7 +60,6 @@ interface CallStatus {
 
 @Component
 export default class App extends Vue {
-
   users: User[] = [];
   opponentId: string;
   isAdmin = false;
@@ -47,12 +67,13 @@ export default class App extends Vue {
   localStream: MediaStream;
   socket: SocketIOClient.Socket;
   callIsOn = false;
+  videoModeOn = false;
 
   created() {
     if (Math.random() > 0.5) {
-      this.socket = io.connect("http://localhost:3000");
+      this.socket = io.connect("http://192.168.0.104:3000");
     } else {
-      this.socket = io.connect("http://localhost:3000", {
+      this.socket = io.connect("http://192.168.0.104:3000", {
         query: `adminToken=op9eeftt345d34d`
       });
       this.isAdmin = true;
@@ -61,17 +82,27 @@ export default class App extends Vue {
     this.socket.on("init_users", (users: User[]) => {
       this.users = users;
     });
-    this.socket.on("user_connected", (id: string) => this.users.push({ id, isCalling: false }));
+    this.socket.on("user_connected", (id: string) =>
+      this.users.push({ id, isCalling: false })
+    );
     this.socket.on("user_disconnected", (id: string) =>
-      this.users.splice(this.users.findIndex(user => user.id === id), 1)
+      this.users.splice(
+        this.users.findIndex(user => user.id === id),
+        1
+      )
     );
-    this.socket.on("user_call_status_changed", (status: CallStatus) =>
-      this.users.find(user =>
-        user.id === (this.isAdmin ? status.callingClientId : status.callingAdminId)
-      ).isCalling = status.isCalling
-    );
+    this.socket.on("user_call_status_changed", (status: CallStatus) => {
+      this.users.find(
+        user =>
+          user.id ===
+          (this.isAdmin ? status.callingClientId : status.callingAdminId)
+      ).isCalling = status.isCalling;
+      this.users = this.users.slice();
+    });
 
-    this.socket.on("offer", (data: string) => this.handleOffer(JSON.parse(data)));
+    this.socket.on("offer", (data: string) =>
+      this.handleOffer(JSON.parse(data))
+    );
     this.socket.on("answer", (data: string) =>
       this.rtcConnection.setRemoteDescription(
         new RTCSessionDescription(JSON.parse(data).answer)
@@ -84,7 +115,7 @@ export default class App extends Vue {
         );
       }
     });
-    this.socket.on('hangup', () => this.closeConnection());
+    this.socket.on("hangup", () => this.closeConnection());
   }
 
   sendRtcEvent(data: {
@@ -110,9 +141,17 @@ export default class App extends Vue {
     });
   }
 
-  async handleOffer(data: { callerId: string; offer: RTCSessionDescriptionInit }) {
-    const accepted = confirm(this.generateNickname(data.callerId) + " is calling. Answer?");
+  async handleOffer(data: {
+    callerId: string;
+    offer: RTCSessionDescriptionInit;
+  }) {
+    const accepted = confirm(
+      this.generateNickname(data.callerId) + " is calling. Answer?"
+    );
     if (accepted) {
+      if (!this.videoModeOn) {
+        this.videoModeOn = true;
+      }
       this.callIsOn = true;
       this.opponentId = data.callerId;
       await this.getMedia(data.callerId);
@@ -146,7 +185,7 @@ export default class App extends Vue {
     this.localStream = stream;
 
     this.rtcConnection.ontrack = ev =>
-      (this.$refs.remoteStream as HTMLVideoElement).srcObject = ev.streams[0];
+      ((this.$refs.remoteStream as HTMLVideoElement).srcObject = ev.streams[0]);
 
     stream
       .getTracks()
@@ -158,14 +197,14 @@ export default class App extends Vue {
           type: "candidate",
           calleeId,
           candidate: event.candidate
-        })
+        });
       }
     };
   }
 
   hangUp() {
     this.sendRtcEvent({
-      type: 'hangup',
+      type: "hangup",
       calleeId: this.opponentId
     });
     this.closeConnection();
@@ -173,6 +212,7 @@ export default class App extends Vue {
 
   closeConnection() {
     (this.$refs.remoteStream as HTMLVideoElement).srcObject = null;
+    (this.$refs.localStream as HTMLVideoElement).srcObject = null;
 
     this.localStream.getTracks().forEach(track => track.stop());
     this.localStream = null;
@@ -183,7 +223,7 @@ export default class App extends Vue {
 
   generateNickname(userId: string): string {
     if (!userId) {
-      return '';
+      return "";
     }
     let sum = 0;
     for (let i = 0; i < userId.length; i++) {
@@ -191,37 +231,53 @@ export default class App extends Vue {
     }
     switch (sum % 10) {
       case 0:
-        return 'Funny Koala';
+        return "Funny Koala";
       case 1:
-        return 'Strange Tiger';
+        return "Strange Tiger";
       case 2:
-        return 'Little Elephant';
+        return "Little Elephant";
       case 3:
-        return 'Huge Bee';
+        return "Huge Bee";
       case 4:
-        return 'Purple Lion';
+        return "Purple Lion";
       case 5:
-        return 'Gorgeous Lizard';
+        return "Gorgeous Lizard";
       case 6:
-        return 'Weird Wolf';
+        return "Weird Wolf";
       case 7:
-        return 'Tiny Buffalo';
+        return "Tiny Buffalo";
       case 8:
-        return 'Red Bear';
+        return "Red Bear";
       case 9:
-        return 'Spanish Tasmanian Devil';
+        return "Spanish Tasmanian Devil";
     }
   }
 }
 </script>
 
-<style scoped>
+<style>
 body {
   margin: 0;
   display: flex;
   height: 100vh;
 }
+
+iframe {
+  height: 100%;
+  width: 100vw;
+  position: absolute;
+  left: 0;
+  z-index: 1;
+  transition: opacity 0.3s ease;
+}
+
+.hidden {
+  opacity: 0;
+  z-index: -1;
+}
+
 #app {
+  width: 100%;
   font-family: Avenir, Helvetica, Arial, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -233,8 +289,35 @@ body {
   border-radius: 50%;
   width: 5vw;
   height: 5vw;
-  margin: 0 2vw;
+  padding: 8px;
+  background: mediumaquamarine;
   cursor: pointer;
+  position: absolute;
+  bottom: calc(15% + 32px);
+  left: calc(15% + 32px);
+}
+
+#video-toggle-fab {
+  background: mediumaquamarine;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  position: absolute;
+  bottom: 40px;
+  left: 40px;
+  padding: 16px;
+  z-index: 2;
+  box-shadow: 0 1px 3px rgba(124, 111, 111, 0.12), 0 1px 2px rgba(0, 0, 0, 0.24);
+  transition: transform 0.25s ease-in-out;
+  cursor: pointer;
+}
+
+#video-toggle-fab:hover {
+  transform: scale(1.15);
+}
+
+#rtc-app {
+  transition: opacity 0.3s ease;
 }
 
 .users-button {
@@ -252,8 +335,8 @@ body {
   align-items: center;
   cursor: pointer;
   box-shadow: 0 1px 3px rgba(124, 111, 111, 0.12), 0 1px 2px rgba(0, 0, 0, 0.24);
-  transition: box-shadow .3s cubic-bezier(0.25, 0.8, 0.25, 1),
-    transform .5s ease-in-out, opacity .5s ease-in-out, background .25s ease;
+  transition: box-shadow 0.3s cubic-bezier(0.25, 0.8, 0.25, 1),
+    transform 0.5s ease-in-out, opacity 0.5s ease-in-out, background 0.5s ease;
 }
 
 .users-button:hover {
@@ -268,7 +351,7 @@ body {
 .list-complete-enter,
 .list-complete-leave-to {
   opacity: 0;
-  transform: translateY(50px);
+  transform: translateX(40px);
 }
 
 .list-complete-leave-active {
@@ -276,6 +359,18 @@ body {
 }
 
 video {
-  max-width: 40%;
+  position: absolute;
+  bottom: 15%;
+}
+
+#local-video {
+  width: 25%;
+  right: 15%;
+}
+
+#remote-video {
+  width: 70%;
+  left: 15%;
+  z-index: -1;
 }
 </style>
