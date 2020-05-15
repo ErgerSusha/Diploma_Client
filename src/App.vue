@@ -1,7 +1,7 @@
 <template>
   <div id="app">
     <iframe
-      src="https://tribe-webapp-dev.herokuapp.com"
+      src="https://twilio-bot-web-client-dev.herokuapp.com"
       frameborder="0"
       :class="{'hidden': videoModeOn}"
     ></iframe>
