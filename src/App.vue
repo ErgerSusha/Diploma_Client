@@ -71,9 +71,9 @@ export default class App extends Vue {
 
   created() {
     if (Math.random() > 0.5) {
-      this.socket = io.connect("http://192.168.0.104:3000");
+      this.socket = io.connect("https://diploma-api.herokuapp.com");
     } else {
-      this.socket = io.connect("http://192.168.0.104:3000", {
+      this.socket = io.connect("https://diploma-api.herokuapp.com", {
         query: `adminToken=op9eeftt345d34d`
       });
       this.isAdmin = true;
