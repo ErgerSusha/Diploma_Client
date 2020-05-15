@@ -6,37 +6,38 @@
       :class="{'hidden': videoModeOn}"
     ></iframe>
 
-    <img
+    <a-button
       id="video-toggle-fab"
       @click="videoModeOn = !videoModeOn"
-      :src="videoModeOn ? '/assets/close.svg' : '/assets/call.svg'"
-    />
+      type="primary" ghost
+    >Open {{videoModeOn ? 'Chat Bot' : 'Video Calls'}}</a-button>
 
     <div id="rtc-app" :class="{'hidden': !videoModeOn}">
-      <h4>
-        {{isAdmin ? ' Admin' : 'Client'}}
-        <i>{{generateNickname(socket.id)}}</i>
-      </h4>
-      <h5 v-if="users.length">Available {{isAdmin ? ' clients' : ' admins'}}</h5>
-      <h5 v-else>Empty, please wait... ⌛</h5>
-      <transition-group name="list-complete" tag="div">
-        <div
+      <span id="user-nickname">
+        <span style="color:#F43751">{{generateNickname(socket.id)}}</span>
+        ({{isAdmin ? 'Admin' : 'Client'}})
+      </span>
+      <span class="online-users-info" v-if="users.length">Available {{isAdmin ? ' clients' : ' admins'}}</span>
+      <span v-else>Empty, please wait... ⌛</span>
+      <transition-group name="list-complete" tag="div" style="margin-top: 12px;">
+        <a-button
           v-for="user in users"
           :key="user.id"
-          :class="{'is-calling': user.isCalling }"
+          :disabled="user.isCalling"
           class="users-button"
+          type="danger"
           @click="callUser(user.id)"
-        >{{ generateNickname(user.id) }}</div>
+        >{{ generateNickname(user.id) }}</a-button>
       </transition-group>
 
       <video id="local-video" ref="localStream" loop autoplay playsinline></video>
-      <img
+      <a-button
         id="hang-up-button"
         @click="hangUp()"
         v-if="callIsOn"
-        src="/assets/call.svg"
-        title="End call"
-      />
+        type="primary"
+        shape="circle">X
+      </a-button>
       <video id="remote-video" ref="remoteStream" loop autoplay playsinline></video>
     </div>
   </div>
@@ -46,6 +47,7 @@
 import Vue from "vue";
 import Component from "vue-class-component";
 import io from "socket.io-client";
+import { Modal, Button } from "ant-design-vue";
 
 interface User {
   id: string;
@@ -56,6 +58,11 @@ interface CallStatus {
   isCalling: boolean;
   callingAdminId?: string;
   callingClientId?: string;
+}
+
+interface Offer {
+  callerId: string;
+  offer: RTCSessionDescriptionInit;
 }
 
 @Component
@@ -109,7 +116,7 @@ export default class App extends Vue {
       )
     );
     this.socket.on("candidate", (data: string) => {
-      if (this.rtcConnection.remoteDescription) {
+      if (this.rtcConnection?.remoteDescription) {
         this.rtcConnection.addIceCandidate(
           new RTCIceCandidate(JSON.parse(data).candidate)
         );
@@ -141,32 +148,37 @@ export default class App extends Vue {
     });
   }
 
-  async handleOffer(data: {
-    callerId: string;
-    offer: RTCSessionDescriptionInit;
-  }) {
-    const accepted = confirm(
-      this.generateNickname(data.callerId) + " is calling. Answer?"
-    );
-    if (accepted) {
-      if (!this.videoModeOn) {
-        this.videoModeOn = true;
+  handleOffer(offer: Offer) {
+    Modal.confirm({
+      title: this.generateNickname(offer.callerId) + " is calling. Answer?",
+      onOk: () => {
+        this.answerCall(offer);
+      },
+      onCancel: () => {
+        this.sendRtcEvent({
+          type: "hangup",
+          calleeId: offer.callerId
+        });
       }
-      this.callIsOn = true;
-      this.opponentId = data.callerId;
-      await this.getMedia(data.callerId);
-      await this.rtcConnection.setRemoteDescription(
-        new RTCSessionDescription(data.offer)
-      );
+    });
+  }
 
-      const answer = await this.rtcConnection.createAnswer();
-      await this.rtcConnection.setLocalDescription(answer);
-      this.sendRtcEvent({
-        type: "answer",
-        calleeId: data.callerId,
-        answer
-      });
+  async answerCall(offer: Offer) {
+    if (!this.videoModeOn) {
+      this.videoModeOn = true;
     }
+    this.callIsOn = true;
+    this.opponentId = offer.callerId;
+    await this.getMedia(offer.callerId);
+    await this.rtcConnection.setRemoteDescription(new RTCSessionDescription(offer.offer));
+
+    const answer = await this.rtcConnection.createAnswer();
+    await this.rtcConnection.setLocalDescription(answer);
+    this.sendRtcEvent({
+      type: "answer",
+      calleeId: offer.callerId,
+      answer
+    });
   }
 
   async getMedia(calleeId: string) {
@@ -286,66 +298,48 @@ iframe {
 }
 
 #hang-up-button {
-  border-radius: 50%;
   width: 5vw;
-  height: 5vw;
-  padding: 8px;
-  background: mediumaquamarine;
-  cursor: pointer;
+  height: 5vw;  
   position: absolute;
   bottom: calc(15% + 32px);
   left: calc(15% + 32px);
+  font-size: 2.5vw;
 }
 
 #video-toggle-fab {
-  background: mediumaquamarine;
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
   position: absolute;
-  bottom: 40px;
-  left: 40px;
-  padding: 16px;
+  top: 18px;
+  height: 36px;
+  left: calc(50% - 70px);
   z-index: 2;
-  box-shadow: 0 1px 3px rgba(124, 111, 111, 0.12), 0 1px 2px rgba(0, 0, 0, 0.24);
-  transition: transform 0.25s ease-in-out;
-  cursor: pointer;
-}
-
-#video-toggle-fab:hover {
-  transform: scale(1.15);
+  width: 140px;
 }
 
 #rtc-app {
+  margin-top: 72px;
   transition: opacity 0.3s ease;
 }
 
-.users-button {
-  outline: none;
-  background: mediumaquamarine;
-  color: #fff;
-  border-radius: 8px;
-  height: 40px;
-  line-height: 40px;
+#user-nickname {
+  position: absolute;
+  height: 36px;
+  left: 36px;
+  top: 18px;
+  line-height: 36px;
   font-weight: bold;
-  width: max-content;
-  margin: 16px;
-  padding: 0 8px;
-  display: inline-block;
-  align-items: center;
-  cursor: pointer;
-  box-shadow: 0 1px 3px rgba(124, 111, 111, 0.12), 0 1px 2px rgba(0, 0, 0, 0.24);
-  transition: box-shadow 0.3s cubic-bezier(0.25, 0.8, 0.25, 1),
-    transform 0.5s ease-in-out, opacity 0.5s ease-in-out, background 0.5s ease;
+  font-size: 18px;
 }
 
-.users-button:hover {
-  box-shadow: 0 6px 10px rgba(0, 0, 0, 0.25), 0 4px 4px rgba(0, 0, 0, 0.22);
+.online-users-info {
+  font-weight: bold;
+  font-size: 24px;
+  font-style: italic;
+  text-decoration: underline;
 }
 
-.is-calling {
-  pointer-events: none;
-  background: #999;
+.users-button {
+  margin: 0 16px;
+  font-weight: bold !important;
 }
 
 .list-complete-enter,
@@ -361,6 +355,7 @@ iframe {
 video {
   position: absolute;
   bottom: 15%;
+  border-radius: 8px;
 }
 
 #local-video {
