@@ -9,7 +9,8 @@
     <a-button
       id="video-toggle-fab"
       @click="videoModeOn = !videoModeOn"
-      type="primary" ghost
+      type="primary"
+      ghost
     >Open {{videoModeOn ? 'Chat Bot' : 'Video Calls'}}</a-button>
 
     <div id="rtc-app" :class="{'hidden': !videoModeOn}">
@@ -17,9 +18,12 @@
         <span style="color:#F43751">{{generateNickname(socket.id)}}</span>
         ({{isAdmin ? 'Admin' : 'Client'}})
       </span>
-      <span class="online-users-info" v-if="users.length">Available {{isAdmin ? ' clients' : ' admins'}}</span>
+      <span
+        id="online-users-info"
+        v-if="users.length"
+      >Available {{isAdmin ? ' clients' : ' admins'}}:</span>
       <span v-else>Empty, please wait... ⌛</span>
-      <transition-group name="list-complete" tag="div" style="margin-top: 12px;">
+      <transition-group name="list-complete" tag="div">
         <a-button
           v-for="user in users"
           :key="user.id"
@@ -30,15 +34,17 @@
         >{{ generateNickname(user.id) }}</a-button>
       </transition-group>
 
-      <video id="local-video" ref="localStream" loop autoplay playsinline></video>
-      <a-button
-        id="hang-up-button"
-        @click="hangUp()"
-        v-if="callIsOn"
-        type="primary"
-        shape="circle">X
-      </a-button>
-      <video id="remote-video" ref="remoteStream" loop autoplay playsinline></video>
+      <div id="video-group">
+        <video id="local-video" ref="localStream" loop autoplay playsinline></video>
+        <a-button
+          id="hang-up-button"
+          @click="hangUp()"
+          v-if="callIsOn"
+          type="primary"
+          shape="circle"
+        >X</a-button>
+        <video id="remote-video" ref="remoteStream" loop autoplay playsinline></video>
+      </div>
     </div>
   </div>
 </template>
@@ -47,7 +53,7 @@
 import Vue from "vue";
 import Component from "vue-class-component";
 import io from "socket.io-client";
-import { Modal, Button } from "ant-design-vue";
+import { Modal } from "ant-design-vue";
 
 interface User {
   id: string;
@@ -170,7 +176,9 @@ export default class App extends Vue {
     this.callIsOn = true;
     this.opponentId = offer.callerId;
     await this.getMedia(offer.callerId);
-    await this.rtcConnection.setRemoteDescription(new RTCSessionDescription(offer.offer));
+    await this.rtcConnection.setRemoteDescription(
+      new RTCSessionDescription(offer.offer)
+    );
 
     const answer = await this.rtcConnection.createAnswer();
     await this.rtcConnection.setLocalDescription(answer);
@@ -275,9 +283,10 @@ body {
 }
 
 iframe {
-  height: 100%;
-  width: 100vw;
+  height: calc(100% - 48px);
+  width: 100%;
   position: absolute;
+  top: 48px;
   left: 0;
   z-index: 1;
   transition: opacity 0.3s ease;
@@ -297,48 +306,68 @@ iframe {
   color: #2c3e50;
 }
 
+#video-group {
+  grid-template-columns: 1fr 1fr;
+}
+
 #hang-up-button {
-  width: 5vw;
-  height: 5vw;  
   position: absolute;
-  bottom: calc(15% + 32px);
-  left: calc(15% + 32px);
-  font-size: 2.5vw;
+  bottom: 24px;
+  left: 24px;
 }
 
 #video-toggle-fab {
-  position: absolute;
-  top: 18px;
-  height: 36px;
-  left: calc(50% - 70px);
+  height: 32px;
+  margin: 8px 0;
   z-index: 2;
-  width: 140px;
+}
+
+#local-video {
+  width: calc(33vw - 32px);
+  position: absolute;
+  bottom: 16px;
+  right: 16px;
+  border-bottom-right-radius: 8px;
+  border-top-left-radius: 8px;
+}
+
+#remote-video {
+  width: calc(100vw - 32px);
+  position: absolute;
+  bottom: 16px;
+  left: 16px;
+  z-index: -1;
+  border-radius: 8px;
+}
+
+@media (min-width: 992px) {
+  #remote-video {
+    max-width: 1048px;
+  }
 }
 
 #rtc-app {
-  margin-top: 72px;
+  height: calc(100% - 48px);
+  display: grid;
+  grid-template-rows: auto auto auto 1fr;
   transition: opacity 0.3s ease;
 }
 
 #user-nickname {
-  position: absolute;
-  height: 36px;
-  left: 36px;
-  top: 18px;
-  line-height: 36px;
   font-weight: bold;
-  font-size: 18px;
+  font-size: 22px;
+  margin-bottom: 8px;
 }
 
-.online-users-info {
+#online-users-info {
   font-weight: bold;
-  font-size: 24px;
-  font-style: italic;
+  justify-self: start;
+  margin-left: 16px;
   text-decoration: underline;
 }
 
 .users-button {
-  margin: 0 16px;
+  margin: 4px;
   font-weight: bold !important;
 }
 
@@ -350,22 +379,5 @@ iframe {
 
 .list-complete-leave-active {
   position: absolute;
-}
-
-video {
-  position: absolute;
-  bottom: 15%;
-  border-radius: 8px;
-}
-
-#local-video {
-  width: 25%;
-  right: 15%;
-}
-
-#remote-video {
-  width: 70%;
-  left: 15%;
-  z-index: -1;
 }
 </style>
